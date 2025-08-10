@@ -71,33 +71,6 @@
             </div>
           </div>
           <video id="video-player" class="w-full h-full object-contain"></video>
-          <div id="video-info" class="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/70 to-transparent p-4 text-white hidden">
-            <div class="flex items-center justify-between">
-              <span id="video-title" class="text-sm font-medium truncate"></span>
-              <span id="video-time" class="text-sm font-medium"></span>
-            </div>
-            <div class="mt-2 flex items-center gap-4">
-              <button id="play-pause-btn" class="hover:text-indigo-400">
-                <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M14.752 11.168l-3.197-2.132A1 1 0 0010 9.87v4.263a1 1 0 001.555.832l3.197-2.132a1 1 0 000-1.664z" />
-                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-                </svg>
-              </button>
-              <div class="flex-1 relative">
-                <div id="video-progress" class="h-1 bg-gray-600 rounded-full">
-                  <div id="video-progress-bar" class="h-full bg-indigo-500 rounded-full" style="width: 0%"></div>
-                </div>
-              </div>
-              <div class="flex items-center gap-2">
-                <input type="range" id="volume-slider" class="w-20" min="0" max="100" value="100">
-                <button id="volume-btn" class="hover:text-indigo-400">
-                  <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15.536 8.464a5 5 0 010 7.072M17.536 6.464a7 7 0 010 11.072M9.536 8.464a5 5 0 010 7.072M7.536 6.464a7 7 0 010 11.072M4.343 9.657l3.657 3.657-3.657 3.657" />
-                  </svg>
-                </button>
-              </div>
-            </div>
-          </div>
           <div
             id="file-selector-overlay"
             class="absolute inset-0 bg-black bg-opacity-80 flex flex-col items-center justify-center text-white p-4 z-10"
@@ -307,9 +280,8 @@ document.addEventListener("DOMContentLoaded", () => {
     // prepare socket listeners for signaling
     setupSocketListeners();
 
-    // prepare local audio + create RTCPeerConnection
-    // IMPORTANT: get mic for both host & guest so both can send audio
-    setupWebRTC();
+    // Initialize audio connection immediately for both host and guest
+    initializeAudioConnection();
 
     // First, ensure both overlays are hidden by default
     fileSelectorOverlay.classList.add('hidden');
@@ -335,7 +307,7 @@ document.addEventListener("DOMContentLoaded", () => {
   }
 
   // ---- WEBRTC SETUP ----
-  async function setupWebRTC() {
+  async function initializeAudioConnection() {
     try {
       // get mic for audio chat with specific constraints for better compatibility
       localStream = await navigator.mediaDevices.getUserMedia({
@@ -349,9 +321,18 @@ document.addEventListener("DOMContentLoaded", () => {
         }
       });
 
-      // create peerConnection if not created
-      if (!peerConnection) {
-        createPeerConnection();
+      // create peerConnection and set up audio immediately
+      createPeerConnection();
+
+      // If we're the host, create and send the offer
+      if (isHost) {
+        try {
+          const offer = await peerConnection.createOffer();
+          await peerConnection.setLocalDescription(offer);
+          socket.emit('webrtc-signal', { sessionId, offer });
+        } catch (e) {
+          console.error('Error creating/sending offer', e);
+        }
       }
 
       // Show audio enabled indicator
@@ -368,9 +349,16 @@ document.addEventListener("DOMContentLoaded", () => {
       retryBtn.textContent = '🎤 Click to enable microphone';
       retryBtn.onclick = () => {
         retryBtn.remove();
-        setupWebRTC();
+        initializeAudioConnection();
       };
       document.body.appendChild(retryBtn);
+    }
+  }
+
+  // Keep this for video streaming setup
+  async function setupWebRTC() {
+    if (!peerConnection) {
+      await initializeAudioConnection();
     }
   }
 
@@ -481,11 +469,9 @@ document.addEventListener("DOMContentLoaded", () => {
 
     const url = URL.createObjectURL(file);
     videoPlayer.src = url;
-    videoPlayer.controls = false; // We'll use our custom controls
+    videoPlayer.controls = true; // Use default browser controls
     fileSelectorOverlay.classList.add('hidden');
     
-    // Show video title
-    videoTitle.textContent = file.name;
     // Show change file button
     changeFileBtn.classList.remove('hidden');
 
@@ -682,42 +668,7 @@ document.addEventListener("DOMContentLoaded", () => {
     fileInput.click();
   });
 
-  // Video controls
-  const playPauseBtn = document.getElementById('play-pause-btn');
-  const volumeSlider = document.getElementById('volume-slider');
-  const volumeBtn = document.getElementById('volume-btn');
-  const videoProgress = document.getElementById('video-progress');
-  const progressBar = document.getElementById('video-progress-bar');
-  const videoInfo = document.getElementById('video-info');
-  const videoTitle = document.getElementById('video-title');
-  const videoTime = document.getElementById('video-time');
-
-  function formatTime(seconds) {
-    const h = Math.floor(seconds / 3600);
-    const m = Math.floor((seconds % 3600) / 60);
-    const s = Math.floor(seconds % 60);
-    return [h, m, s].map(v => v < 10 ? '0' + v : v).join(':');
-  }
-
-  videoPlayer.addEventListener('loadedmetadata', () => {
-    videoInfo.classList.remove('hidden');
-  });
-
-  videoPlayer.addEventListener('timeupdate', () => {
-    const progress = (videoPlayer.currentTime / videoPlayer.duration) * 100;
-    progressBar.style.width = progress + '%';
-    videoTime.textContent = `${formatTime(videoPlayer.currentTime)} / ${formatTime(videoPlayer.duration)}`;
-  });
-
-  videoProgress.addEventListener('click', (e) => {
-    const rect = videoProgress.getBoundingClientRect();
-    const pos = (e.clientX - rect.left) / rect.width;
-    videoPlayer.currentTime = pos * videoPlayer.duration;
-  });
-
-  volumeSlider.addEventListener('input', () => {
-    videoPlayer.volume = volumeSlider.value / 100;
-  });
+  // Keep connection status handlers
 
   // Handle connection state changes
   socket.on('connect', () => {
