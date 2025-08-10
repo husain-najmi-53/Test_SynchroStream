@@ -70,7 +70,7 @@
             <div id="connection-status" class="px-3 py-1 rounded-full text-sm font-medium hidden">
             </div>
           </div>
-          <video id="video-player" class="w-full h-full object-contain" playsinline autoplay></video>
+          <video id="video-player" class="w-full h-full object-contain"></video>
           <div
             id="file-selector-overlay"
             class="absolute inset-0 bg-black bg-opacity-80 flex flex-col items-center justify-center text-white p-4 z-10"
@@ -370,53 +370,24 @@ document.addEventListener("DOMContentLoaded", () => {
 
     peerConnection.ontrack = (event) => {
       console.log('ontrack event, kind=', event.track.kind);
-      
-      if (!isHost) {
-        // For guest: Set up video immediately when track is received
-        if (event.track.kind === 'video') {
-          console.log('Received video track from host');
+      // many browsers provide event.streams; add tracks to remoteStream
+      if (event.streams && event.streams[0]) {
+        event.streams[0].getTracks().forEach(track => {
+          remoteStream.addTrack(track);
+        });
+      } else {
+        // fallback: add the single track
+        remoteStream.addTrack(event.track);
+      }
+
+      if (event.track.kind === 'video') {
+        // For guest: hide waiting overlay and ensure file selector is hidden
+        if (!isHost) {
           guestWaitingOverlay.classList.add('hidden');
           fileSelectorOverlay.classList.add('hidden');
-          
-          // Set the stream directly from the event
-          if (event.streams && event.streams[0]) {
-            console.log('Using event.streams[0] for video');
-            videoPlayer.srcObject = event.streams[0];
-          } else {
-            console.log('Creating new MediaStream for video');
-            // If no stream provided, create one
-            const stream = new MediaStream([event.track]);
-            videoPlayer.srcObject = stream;
-          }
-          
-          videoPlayer.controls = true;  // Explicitly enable controls for guest
-          // Force video player visibility
-          videoPlayer.style.display = 'block';
-          videoPlayer.style.opacity = '1';
-          
-          // Enable guest video controls
-          videoPlayer.addEventListener('play', () => {
-            socket.emit('control', { sessionId, action: 'play', time: videoPlayer.currentTime });
-          });
-          
-          videoPlayer.addEventListener('pause', () => {
-            socket.emit('control', { sessionId, action: 'pause', time: videoPlayer.currentTime });
-          });
-          
-          videoPlayer.addEventListener('seeked', () => {
-            socket.emit('control', { sessionId, action: 'seek', time: videoPlayer.currentTime });
-          });
-
+          videoPlayer.srcObject = remoteStream;
           videoPlayer.play().catch(() => {
             console.log('Autoplay prevented; user interaction may be required to start playback.');
-            const playButton = document.createElement('button');
-            playButton.className = 'absolute top-4 left-4 bg-indigo-600 text-white px-4 py-2 rounded-lg z-50';
-            playButton.textContent = '▶️ Click to Play';
-            playButton.onclick = () => {
-              videoPlayer.play();
-              playButton.remove();
-            };
-            document.body.appendChild(playButton);
           });
         }
       }
@@ -517,45 +488,19 @@ document.addEventListener("DOMContentLoaded", () => {
       return;
     }
 
-    // capture stream from the playing video with error handling
-    let videoStream;
-    try {
-      // Try standard captureStream first
-      if (videoPlayer.captureStream) {
-        videoStream = videoPlayer.captureStream();
-      } else if (videoPlayer.mozCaptureStream) {
-        // Firefox fallback
-        videoStream = videoPlayer.mozCaptureStream();
-      }
-
-      if (!videoStream) {
-        throw new Error('captureStream not supported');
-      }
-
-      console.log('Successfully captured video stream:', videoStream.getTracks().length + ' tracks');
-
-      // create peerConnection if not exists
-      if (!peerConnection) createPeerConnection();
-
-      // Remove any existing video tracks
-      const senders = peerConnection.getSenders();
-      senders.forEach(sender => {
-        if (sender.track && sender.track.kind === 'video') {
-          peerConnection.removeTrack(sender);
-        }
-      });
-
-      // Add new video tracks
-      videoStream.getTracks().forEach(track => {
-        console.log('Adding track to peer connection:', track.kind);
-        peerConnection.addTrack(track, videoStream);
-      });
-
-    } catch (error) {
-      console.error('Error capturing video stream:', error);
-      alert('Error streaming video. Please make sure you\'re using a modern browser (Chrome, Edge, or Firefox).');
+    // capture stream from the playing video
+    const videoStream = videoPlayer.captureStream ? videoPlayer.captureStream() : videoPlayer.mozCaptureStream && videoPlayer.mozCaptureStream();
+    if (!videoStream) {
+      alert('Your browser does not support captureStream(). Use Chrome/Edge/Firefox latest versions.');
       return;
     }
+
+    // create peerConnection if not exists and add tracks
+    if (!peerConnection) createPeerConnection();
+
+    videoStream.getTracks().forEach(track => {
+      peerConnection.addTrack(track, videoStream);
+    });
 
     // create offer and send to guest
     try {
@@ -601,38 +546,22 @@ document.addEventListener("DOMContentLoaded", () => {
       }
     });
 
-    socket.on('control', async (data) => {
+    socket.on('control', (data) => {
       if (data && data.time !== undefined) {
-        // Handle controls from either host or guest with improved synchronization
-        try {
-          const timeDiff = Math.abs(videoPlayer.currentTime - data.time);
-          
-          // Always sync time first before any action
-          if (timeDiff > 0.5) {
-            videoPlayer.currentTime = data.time;
-          }
-          
-          if (data.action === 'play') {
-            try {
-              await videoPlayer.play();
-            } catch (err) {
-              console.log('Playback failed, may need user interaction');
-              const playButton = document.createElement('button');
-              playButton.className = 'absolute top-4 left-4 bg-indigo-600 text-white px-4 py-2 rounded-lg z-50';
-              playButton.textContent = '▶️ Click to Play';
-              playButton.onclick = async () => {
-                await videoPlayer.play();
-                playButton.remove();
-              };
-              document.body.appendChild(playButton);
-            }
-          } else if (data.action === 'pause') {
-            videoPlayer.pause();
-          } else if (data.action === 'seek') {
-            videoPlayer.currentTime = data.time;
-          }
-        } catch (error) {
-          console.error('Error handling control message:', error);
+        // Handle controls from either host or guest
+        const timeDiff = Math.abs(videoPlayer.currentTime - data.time);
+        
+        if (timeDiff > 0.5) {
+          videoPlayer.currentTime = data.time;
+        }
+        
+        if (data.action === 'play') {
+          videoPlayer.play().catch(() => {
+            console.log('Playback failed, may need user interaction');
+          });
+        }
+        if (data.action === 'pause') {
+          videoPlayer.pause();
         }
       }
     });
