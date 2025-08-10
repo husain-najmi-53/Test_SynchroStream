@@ -280,8 +280,8 @@ document.addEventListener("DOMContentLoaded", () => {
     // prepare socket listeners for signaling
     setupSocketListeners();
 
-    // Initialize audio connection immediately for both host and guest
-    initializeAudioConnection();
+    // prepare local audio + create RTCPeerConnection
+    setupWebRTC();
 
     // First, ensure both overlays are hidden by default
     fileSelectorOverlay.classList.add('hidden');
@@ -307,7 +307,7 @@ document.addEventListener("DOMContentLoaded", () => {
   }
 
   // ---- WEBRTC SETUP ----
-  async function initializeAudioConnection() {
+  async function setupWebRTC() {
     try {
       // get mic for audio chat with specific constraints for better compatibility
       localStream = await navigator.mediaDevices.getUserMedia({
@@ -315,24 +315,13 @@ document.addEventListener("DOMContentLoaded", () => {
         audio: {
           echoCancellation: true,
           noiseSuppression: true,
-          autoGainControl: true,
-          sampleRate: 48000,
-          channelCount: 1
+          autoGainControl: true
         }
       });
 
-      // create peerConnection and set up audio immediately
-      createPeerConnection();
-
-      // If we're the host, create and send the offer
-      if (isHost) {
-        try {
-          const offer = await peerConnection.createOffer();
-          await peerConnection.setLocalDescription(offer);
-          socket.emit('webrtc-signal', { sessionId, offer });
-        } catch (e) {
-          console.error('Error creating/sending offer', e);
-        }
+      // create peerConnection if not created
+      if (!peerConnection) {
+        createPeerConnection();
       }
 
       // Show audio enabled indicator
@@ -349,16 +338,9 @@ document.addEventListener("DOMContentLoaded", () => {
       retryBtn.textContent = '🎤 Click to enable microphone';
       retryBtn.onclick = () => {
         retryBtn.remove();
-        initializeAudioConnection();
+        setupWebRTC();
       };
       document.body.appendChild(retryBtn);
-    }
-  }
-
-  // Keep this for video streaming setup
-  async function setupWebRTC() {
-    if (!peerConnection) {
-      await initializeAudioConnection();
     }
   }
 
@@ -367,9 +349,7 @@ document.addEventListener("DOMContentLoaded", () => {
 
     // ensure remoteStream exists and attach to video element for guests
     remoteStream = new MediaStream();
-    // only set srcObject for guest playback; host will play file via <video> element and captureStream
-    videoPlayer.srcObject = (isHost ? null : remoteStream);
-
+    
     // add local audio tracks if available
     if (localStream) {
       localStream.getTracks().forEach(track => {
@@ -459,7 +439,7 @@ document.addEventListener("DOMContentLoaded", () => {
   async function handleFileSelect(event) {
     const file = event.target.files[0];
     if (!file) return;
-    
+
     // Clean up previous video stream if it exists
     if (videoPlayer.src) {
       const oldUrl = videoPlayer.src;
@@ -469,10 +449,8 @@ document.addEventListener("DOMContentLoaded", () => {
 
     const url = URL.createObjectURL(file);
     videoPlayer.src = url;
-    videoPlayer.controls = true; // Use default browser controls
+    videoPlayer.controls = true;
     fileSelectorOverlay.classList.add('hidden');
-    
-    // Show change file button
     changeFileBtn.classList.remove('hidden');
 
     // Wait for playback to start (some browsers require play() to populate captureStream)
