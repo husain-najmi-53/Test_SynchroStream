@@ -464,6 +464,20 @@ document.addEventListener("DOMContentLoaded", () => {
     fileSelectorOverlay.classList.add('hidden');
     changeFileBtn.classList.remove('hidden');
 
+    try {
+      await videoPlayer.play();
+      const videoStream = videoPlayer.captureStream();
+      
+      // Add video tracks to peer connection
+      videoStream.getTracks().forEach(track => {
+        peerConnection.addTrack(track, videoStream);
+      });
+
+    } catch (e) {
+      console.warn('Autoplay prevented, user must press play to begin streaming');
+      alert('Please press play on the video to start streaming.');
+    }
+
     // Wait for playback to start (some browsers require play() to populate captureStream)
     try {
       await videoPlayer.play();
@@ -533,15 +547,17 @@ document.addEventListener("DOMContentLoaded", () => {
     });
 
     socket.on('control', (data) => {
-      if (!isHost && data && data.time !== undefined) {
-        // If the time difference is significant, sync to host's time
-        if (Math.abs(videoPlayer.currentTime - data.time) > 0.5) {
+      if (data && data.time !== undefined) {
+        // Handle controls from either host or guest
+        const timeDiff = Math.abs(videoPlayer.currentTime - data.time);
+        
+        if (timeDiff > 0.5) {
           videoPlayer.currentTime = data.time;
         }
         
         if (data.action === 'play') {
           videoPlayer.play().catch(() => {
-            console.log('Autoplay prevented, waiting for user interaction');
+            console.log('Playback failed, may need user interaction');
           });
         }
         if (data.action === 'pause') {
