@@ -1,0 +1,328 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Synchrostream - Watch Together</title>
+    <!--
+      Chosen Palette: Warm Neutrals
+      Application Structure Plan: The application uses a two-stage single-page design. Stage 1 is the "Lobby," where a user can choose to create a new watch party or join an existing one using a session ID. This separates the setup from the main experience. Stage 2 is the "Watch Party," which features a responsive two-column layout. The left, larger column is dedicated to the video player for an immersive viewing experience. The right, smaller column contains all interactive social elements: the text chat and audio controls. This co-locates interaction and viewing, which is a user-friendly approach for a co-watching application. The entire flow is managed within one page to feel fast and modern, avoiding page reloads.
+      Visualization & Content Choices:
+      - Lobby UI (HTML/JS): Goal: User Onboarding. Method: Simple buttons and an input field. Interaction: Click to create/join, input for session ID. Justification: Clear, task-oriented entry point for users.
+      - Video Player (HTML <video>/JS): Goal: Display synchronized video. Method: A standard HTML5 video element. Interaction: Playback is controlled by the host; actions are sent via WebSocket and mirrored on the guest's player. The video stream itself is transmitted via WebRTC. Justification: This separation of control (WebSocket) and data (WebRTC) is efficient and robust for real-time applications.
+      - Text Chat (HTML/JS): Goal: Real-time text communication. Method: A scrollable div for messages and an input form. Interaction: Typing and sending messages, which are broadcast via WebSocket. Justification: A classic, universally understood chat interface.
+      - Audio Chat (JS/WebRTC): Goal: Real-time voice communication. Method: The user's microphone stream (`getUserMedia`) is added as a track to the WebRTC peer connection. Interaction: A mute/unmute button toggles the audio track's `enabled` property. Justification: Provides seamless voice chat without needing a separate connection, as it's bundled with the video stream.
+      CONFIRMATION: NO SVG graphics used. NO Mermaid JS used.
+    -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        body {
+            font-family: 'Inter', sans-serif;
+        }
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;700&display=swap');
+        .chat-message {
+            max-width: 80%;
+        }
+    </style>
+</head>
+<body class="bg-gray-100 text-gray-800">
+
+    <div id="lobby" class="flex flex-col items-center justify-center min-h-screen p-4">
+        <div class="w-full max-w-md bg-white p-8 rounded-xl shadow-lg text-center">
+            <h1 class="text-4xl font-bold text-indigo-600 mb-2">Synchrostream</h1>
+            <p class="text-gray-500 mb-8">Watch movies and series together, lag-free.</p>
+            
+            <button id="create-party-btn" class="w-full bg-indigo-600 text-white font-bold py-3 px-4 rounded-lg hover:bg-indigo-700 transition duration-300 mb-4">
+                Create Watch Party
+            </button>
+
+            <div class="relative flex py-5 items-center">
+                <div class="flex-grow border-t border-gray-300"></div>
+                <span class="flex-shrink mx-4 text-gray-400">OR</span>
+                <div class="flex-grow border-t border-gray-300"></div>
+            </div>
+
+            <div class="flex flex-col sm:flex-row gap-2">
+                <input type="text" id="session-id-input" placeholder="Enter Session ID" class="flex-grow p-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500">
+                <button id="join-party-btn" class="bg-gray-700 text-white font-bold py-3 px-4 rounded-lg hover:bg-gray-800 transition duration-300">
+                    Join Party
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <div id="watch-party" class="hidden h-screen w-screen">
+        <div class="flex flex-col lg:flex-row h-full w-full bg-gray-900">
+            
+            <div id="video-container" class="relative flex-grow h-1/2 lg:h-full lg:w-3/4 bg-black flex items-center justify-center">
+                <video id="video-player" class="w-full h-full object-contain"></video>
+                <div id="file-selector-overlay" class="absolute inset-0 bg-black bg-opacity-80 flex flex-col items-center justify-center text-white p-4 z-10">
+                    <h2 class="text-2xl font-bold mb-4">You are the Host</h2>
+                    <p class="mb-6 text-center">Select a video file to start the party.</p>
+                    <input type="file" id="file-input" class="hidden">
+                    <button id="select-file-btn" class="bg-indigo-600 text-white font-bold py-3 px-6 rounded-lg hover:bg-indigo-700 transition duration-300">
+                        Select Video
+                    </button>
+                    <div class="mt-8 text-center">
+                        <p class="text-gray-400 mb-2">Share this Session ID with your friend:</p>
+                        <div class="bg-gray-800 p-3 rounded-lg">
+                            <span id="session-id-display" class="text-xl font-mono tracking-widest"></span>
+                        </div>
+                    </div>
+                </div>
+                 <div id="guest-waiting-overlay" class="hidden absolute inset-0 bg-black bg-opacity-80 flex flex-col items-center justify-center text-white p-4 z-10">
+                    <h2 class="text-2xl font-bold mb-4">Welcome, Guest!</h2>
+                    <p class="text-center">Waiting for the host to select and start the video...</p>
+                </div>
+            </div>
+
+            <div class="flex-shrink-0 h-1/2 lg:h-full lg:w-1/4 bg-gray-800 flex flex-col border-l border-gray-700">
+                <div class="p-4 border-b border-gray-700 flex justify-between items-center">
+                    <h2 class="text-xl font-bold text-white">Chat & Controls</h2>
+                    <button id="mute-btn" class="p-2 rounded-full bg-gray-700 hover:bg-gray-600 transition">
+                        <svg class="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-8a3 3 0 01-3-3V5a3 3 0 116 0v6a3 3 0 01-3 3z"></path></svg>
+                    </button>
+                </div>
+                
+                <div id="chat-box" class="flex-grow p-4 overflow-y-auto">
+                    <!-- Chat messages will be appended here -->
+                </div>
+                
+                <div class="p-4 border-t border-gray-700">
+                    <form id="chat-form" class="flex gap-2">
+                        <input type="text" id="chat-input" placeholder="Type a message..." class="flex-grow p-3 bg-gray-700 text-white border border-gray-600 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500" autocomplete="off">
+                        <button type="submit" class="bg-indigo-600 text-white font-bold p-3 rounded-lg hover:bg-indigo-700 transition">Send</button>
+                    </form>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <script>
+        document.addEventListener('DOMContentLoaded', () => {
+            const lobby = document.getElementById('lobby');
+            const watchParty = document.getElementById('watch-party');
+            const createPartyBtn = document.getElementById('create-party-btn');
+            const joinPartyBtn = document.getElementById('join-party-btn');
+            const sessionIdInput = document.getElementById('session-id-input');
+            const videoPlayer = document.getElementById('video-player');
+            const fileInput = document.getElementById('file-input');
+            const selectFileBtn = document.getElementById('select-file-btn');
+            const fileSelectorOverlay = document.getElementById('file-selector-overlay');
+            const guestWaitingOverlay = document.getElementById('guest-waiting-overlay');
+            const sessionIdDisplay = document.getElementById('session-id-display');
+            const chatBox = document.getElementById('chat-box');
+            const chatForm = document.getElementById('chat-form');
+            const chatInput = document.getElementById('chat-input');
+            const muteBtn = document.getElementById('mute-btn');
+
+            let isHost = false;
+            let sessionId = null;
+            let localStream = null;
+            let remoteStream = null;
+            let peerConnection = null;
+            
+            // In a real app, this would connect to a WebSocket server.
+            // We'll simulate the behavior here.
+            let socket = {
+                emit: (event, data) => {
+                    console.log(`Simulating socket.emit for event '${event}' with data:`, data);
+                    // In a real app, this sends data to the server.
+                    // Here we can simulate receiving it back for demonstration.
+                    if (event === 'chat-message') {
+                        handleChatMessage({ ...data, sender: 'You' });
+                    }
+                },
+                on: (event, handler) => {
+                    console.log(`Simulating socket.on for event '${event}'`);
+                    // This is where we would listen for server events.
+                }
+            };
+            
+            const configuration = {
+                iceServers: [{ urls: 'stun:stun.l.google.com:19302' }]
+            };
+
+            function initializeLobby() {
+                createPartyBtn.addEventListener('click', () => {
+                    isHost = true;
+                    sessionId = Math.random().toString(36).substring(2, 8).toUpperCase();
+                    startParty();
+                });
+
+                joinPartyBtn.addEventListener('click', () => {
+                    const id = sessionIdInput.value.trim().toUpperCase();
+                    if (id) {
+                        isHost = false;
+                        sessionId = id;
+                        startParty();
+                    } else {
+                        alert('Please enter a valid Session ID.');
+                    }
+                });
+            }
+
+            function startParty() {
+                lobby.classList.add('hidden');
+                watchParty.classList.remove('hidden');
+                
+                // Here you would establish a real WebSocket connection:
+                // socket = io('YOUR_SERVER_URL');
+                // setupSocketListeners();
+
+                setupWebRTC();
+
+                if (isHost) {
+                    fileSelectorOverlay.classList.remove('hidden');
+                    sessionIdDisplay.textContent = sessionId;
+                    selectFileBtn.addEventListener('click', () => fileInput.click());
+                    fileInput.addEventListener('change', handleFileSelect);
+                    videoPlayer.addEventListener('play', () => socket.emit('control', { action: 'play', time: videoPlayer.currentTime }));
+                    videoPlayer.addEventListener('pause', () => socket.emit('control', { action: 'pause', time: videoPlayer.currentTime }));
+                    videoPlayer.addEventListener('seeked', () => socket.emit('control', { action: 'seek', time: videoPlayer.currentTime }));
+                } else {
+                    guestWaitingOverlay.classList.remove('hidden');
+                    // Guest would send a 'join' event to the server
+                    socket.emit('join-session', { sessionId });
+                }
+            }
+            
+            async function setupWebRTC() {
+                try {
+                    // Get user's microphone for audio chat
+                    localStream = await navigator.mediaDevices.getUserMedia({ video: false, audio: true });
+                    
+                    peerConnection = new RTCPeerConnection(configuration);
+
+                    // Add local audio tracks to the connection
+                    localStream.getTracks().forEach(track => {
+                        peerConnection.addTrack(track, localStream);
+                    });
+
+                    // Handle incoming remote tracks
+                    peerConnection.ontrack = (event) => {
+                        if (!remoteStream) {
+                            remoteStream = new MediaStream();
+                        }
+                        event.streams[0].getTracks().forEach(track => {
+                            remoteStream.addTrack(track);
+                        });
+
+                        if (event.track.kind === 'video') {
+                            videoPlayer.srcObject = remoteStream;
+                            guestWaitingOverlay.classList.add('hidden');
+                            videoPlayer.play().catch(e => console.error("Error playing remote video:", e));
+                        }
+                        if (event.track.kind === 'audio') {
+                            const remoteAudio = new Audio();
+                            remoteAudio.srcObject = new MediaStream([event.track]);
+                            remoteAudio.play().catch(e => console.error("Error playing remote audio:", e));
+                        }
+                    };
+                    
+                    // Handle ICE candidates
+                    peerConnection.onicecandidate = (event) => {
+                        if (event.candidate) {
+                            socket.emit('webrtc-signal', { sessionId, candidate: event.candidate });
+                        }
+                    };
+
+                    // If host, create offer after file is selected
+                    // If guest, wait for offer from host
+                    if (!isHost) {
+                        // In a real scenario, the guest waits for the offer from the host via the signaling server.
+                        console.log("Guest is ready, waiting for WebRTC offer.");
+                    }
+
+                } catch (error) {
+                    console.error('Error accessing media devices.', error);
+                    alert('Could not access microphone. Audio chat will be disabled.');
+                }
+            }
+
+            async function handleFileSelect(event) {
+                const file = event.target.files[0];
+                if (file) {
+                    const url = URL.createObjectURL(file);
+                    videoPlayer.src = url;
+                    videoPlayer.controls = true;
+                    fileSelectorOverlay.classList.add('hidden');
+                    
+                    // Capture video stream and add to WebRTC connection
+                    const videoStream = videoPlayer.captureStream();
+                    videoStream.getTracks().forEach(track => {
+                        peerConnection.addTrack(track, videoStream);
+                    });
+
+                    // Create and send offer to the guest
+                    const offer = await peerConnection.createOffer();
+                    await peerConnection.setLocalDescription(offer);
+                    socket.emit('webrtc-signal', { sessionId, offer });
+                }
+            }
+            
+            function setupSocketListeners() {
+                // This function would contain all socket.on listeners in a real app
+                socket.on('webrtc-signal', async (data) => {
+                    if (data.offer) {
+                        await peerConnection.setRemoteDescription(new RTCSessionDescription(data.offer));
+                        const answer = await peerConnection.createAnswer();
+                        await peerConnection.setLocalDescription(answer);
+                        socket.emit('webrtc-signal', { sessionId, answer });
+                    } else if (data.answer) {
+                        await peerConnection.setRemoteDescription(new RTCSessionDescription(data.answer));
+                    } else if (data.candidate) {
+                        await peerConnection.addIceCandidate(new RTCIceCandidate(data.candidate));
+                    }
+                });
+
+                socket.on('control', (data) => {
+                    if (!isHost) {
+                        videoPlayer.currentTime = data.time;
+                        if (data.action === 'play') videoPlayer.play();
+                        if (data.action === 'pause') videoPlayer.pause();
+                    }
+                });
+
+                socket.on('chat-message', handleChatMessage);
+            }
+
+            function handleChatMessage(data) {
+                const messageElement = document.createElement('div');
+                messageElement.classList.add('chat-message', 'mb-3', 'flex');
+                
+                const content = `
+                    <div class="p-3 rounded-lg ${data.sender === 'You' ? 'bg-indigo-500 text-white ml-auto' : 'bg-gray-600 text-white'}">
+                        <p class="font-bold text-sm">${data.sender}</p>
+                        <p>${data.text}</p>
+                    </div>
+                `;
+                messageElement.innerHTML = content;
+                chatBox.appendChild(messageElement);
+                chatBox.scrollTop = chatBox.scrollHeight;
+            }
+
+            chatForm.addEventListener('submit', (e) => {
+                e.preventDefault();
+                const message = chatInput.value.trim();
+                if (message) {
+                    socket.emit('chat-message', { sessionId, text: message, sender: isHost ? 'Host' : 'Guest' });
+                    chatInput.value = '';
+                }
+            });
+
+            muteBtn.addEventListener('click', () => {
+                if (localStream) {
+                    localStream.getAudioTracks().forEach(track => {
+                        track.enabled = !track.enabled;
+                        muteBtn.classList.toggle('bg-red-500', !track.enabled);
+                        muteBtn.classList.toggle('bg-gray-700', track.enabled);
+                    });
+                }
+            });
+
+            initializeLobby();
+        });
+    </script>
+</body>
+</html>

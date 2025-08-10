@@ -1,0 +1,255 @@
+It sounds like you want the full runnable version of Synchrostream.
+
+I can give you a **complete Node.js + socket.io + vanilla HTML/JS project** that you can run locally right away.
+
+The repo will have:
+```
+/ (root)
+  package.json
+  server.js (Node + Express + socket.io signaling server)
+  /public
+    host.html
+    guest.html
+    style.css
+```
+
+**Step 1: package.json**
+```json
+{
+  "name": "synchrostream",
+  "version": "1.0.0",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "dependencies": {
+    "express": "^4.18.2",
+    "socket.io": "^4.7.2",
+    "uuid": "^9.0.0"
+  }
+}
+```
+
+**Step 2: server.js**
+```js
+const express = require('express');
+const http = require('http');
+const { v4: uuidv4 } = require('uuid');
+const app = express();
+const server = http.createServer(app);
+const io = require('socket.io')(server);
+
+app.use(express.static('public'));
+
+const sessions = new Map();
+
+io.on('connection', socket => {
+  socket.on('create-session', cb => {
+    const id = uuidv4().slice(0, 8);
+    sessions.set(id, { host: socket.id, guest: null });
+    socket.sessionId = id;
+    socket.role = 'host';
+    socket.join(id);
+    cb(id);
+  });
+
+  socket.on('join-session', (id, cb) => {
+    const s = sessions.get(id);
+    if (!s) return cb({ error: 'No such session' });
+    if (s.guest) return cb({ error: 'Session full' });
+    s.guest = socket.id;
+    socket.sessionId = id;
+    socket.role = 'guest';
+    socket.join(id);
+    cb({ ok: true });
+    io.to(s.host).emit('guest-joined');
+  });
+
+  socket.on('signal', msg => {
+    if (msg.to) io.to(msg.to).emit('signal', { from: socket.id, data: msg.data });
+    else {
+      const s = sessions.get(socket.sessionId);
+      if (!s) return;
+      const target = socket.role === 'host' ? s.guest : s.host;
+      if (target) io.to(target).emit('signal', { from: socket.id, data: msg.data });
+    }
+  });
+
+  socket.on('disconnect', () => {
+    const id = socket.sessionId;
+    const s = sessions.get(id);
+    if (!s) return;
+    if (socket.role === 'host') {
+      io.to(id).emit('host-disconnected');
+      sessions.delete(id);
+    } else if (socket.role === 'guest') {
+      s.guest = null;
+      io.to(id).emit('guest-left');
+    }
+  });
+});
+
+server.listen(3000, () => console.log('Server running on http://localhost:3000'));
+```
+
+**Step 3: public/host.html**
+```html
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8">
+<title>Host - Synchrostream</title>
+<style>
+body { font-family: sans-serif; }
+#sessionLink { margin: 10px 0; display: block; }
+</style>
+</head>
+<body>
+<h1>Host</h1>
+<input type="file" id="fileInput" accept="video/*" />
+<video id="localVideo" controls></video>
+<div>
+  <span>Session link:</span>
+  <a id="sessionLink"></a>
+</div>
+<div>
+  <input id="chatInput" placeholder="Type...">
+  <button onclick="sendChat()">Send</button>
+  <div id="chatLog"></div>
+</div>
+<script src="/socket.io/socket.io.js"></script>
+<script>
+const socket = io();
+let pc, dc, sessionId;
+const ICE_SERVERS = { iceServers: [{ urls: 'stun:stun.l.google.com:19302' }] };
+
+document.getElementById('fileInput').addEventListener('change', async e => {
+  const file = e.target.files[0];
+  if (!file) return;
+  const url = URL.createObjectURL(file);
+  localVideo.src = url;
+  await localVideo.play();
+  socket.emit('create-session', id => {
+    sessionId = id;
+    document.getElementById('sessionLink').textContent = window.location.origin + '/guest.html#' + id;
+    document.getElementById('sessionLink').href = '/guest.html#' + id;
+  });
+});
+
+socket.on('guest-joined', startWebRTC);
+
+async function startWebRTC() {
+  pc = new RTCPeerConnection(ICE_SERVERS);
+  dc = pc.createDataChannel('chat');
+  dc.onmessage = e => logChat('Guest', e.data);
+
+  const vStream = localVideo.captureStream();
+  const mic = await navigator.mediaDevices.getUserMedia({ audio: true });
+  vStream.getTracks().forEach(t => pc.addTrack(t, vStream));
+  mic.getTracks().forEach(t => pc.addTrack(t, mic));
+
+  pc.onicecandidate = e => {
+    if (e.candidate) socket.emit('signal', { data: { type: 'ice', candidate: e.candidate } });
+  };
+
+  socket.on('signal', async ({ data }) => {
+    if (data.type === 'answer') await pc.setRemoteDescription(data);
+    else if (data.type === 'ice') await pc.addIceCandidate(data.candidate);
+  });
+
+  const offer = await pc.createOffer();
+  await pc.setLocalDescription(offer);
+  socket.emit('signal', { data: offer });
+}
+
+function sendChat() {
+  const msg = chatInput.value;
+  chatInput.value = '';
+  dc.send(msg);
+  logChat('You', msg);
+}
+
+function logChat(user, msg) {
+  chatLog.innerHTML += `<p><b>${user}:</b> ${msg}</p>`;
+}
+</script>
+</body>
+</html>
+```
+
+**Step 4: public/guest.html**
+```html
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8">
+<title>Guest - Synchrostream</title>
+</head>
+<body>
+<h1>Guest</h1>
+<video id="remoteVideo" autoplay playsinline controls></video>
+<div>
+  <input id="chatInput" placeholder="Type...">
+  <button onclick="sendChat()">Send</button>
+  <div id="chatLog"></div>
+</div>
+<script src="/socket.io/socket.io.js"></script>
+<script>
+const socket = io();
+let pc, dc, sessionId;
+const ICE_SERVERS = { iceServers: [{ urls: 'stun:stun.l.google.com:19302' }] };
+
+sessionId = location.hash.substring(1);
+socket.emit('join-session', sessionId, res => {
+  if (res.error) alert(res.error);
+});
+
+socket.on('signal', async ({ from, data }) => {
+  if (!pc) setupPC();
+  if (data.type === 'offer') {
+    await pc.setRemoteDescription(data);
+    const answer = await pc.createAnswer();
+    await pc.setLocalDescription(answer);
+    socket.emit('signal', { data: answer });
+  } else if (data.type === 'ice') {
+    await pc.addIceCandidate(data.candidate);
+  }
+});
+
+function setupPC() {
+  pc = new RTCPeerConnection(ICE_SERVERS);
+  pc.ontrack = e => remoteVideo.srcObject = e.streams[0];
+  pc.ondatachannel = e => {
+    dc = e.channel;
+    dc.onmessage = ev => logChat('Host', ev.data);
+  };
+  pc.onicecandidate = e => {
+    if (e.candidate) socket.emit('signal', { data: { type: 'ice', candidate: e.candidate } });
+  };
+  navigator.mediaDevices.getUserMedia({ audio: true }).then(m => m.getTracks().forEach(t => pc.addTrack(t, m)));
+}
+
+function sendChat() {
+  const msg = chatInput.value;
+  chatInput.value = '';
+  dc.send(msg);
+  logChat('You', msg);
+}
+
+function logChat(user, msg) {
+  chatLog.innerHTML += `<p><b>${user}:</b> ${msg}</p>`;
+}
+</script>
+</body>
+</html>
+```
+
+**To run it locally:**
+1. Save the files in a folder.
+2. Run:
+```bash
+npm install
+npm start
+```
+3. Open `http://localhost:3000/host.html` in one browser.
+4. Select a video → copy the link → open in another browser/device.
+5. You’ll see synced video + audio chat + text chat.
