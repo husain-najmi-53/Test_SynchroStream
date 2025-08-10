@@ -157,9 +157,6 @@
       </div>
     </div>
 
-    <!-- Load Socket.IO from server (served by server.js) -->
-<script src="/socket.io/socket.io.js"></script>
-
 <script>
 document.addEventListener("DOMContentLoaded", () => {
   // ---- SOCKET.IO CONNECTION ----
@@ -171,7 +168,6 @@ document.addEventListener("DOMContentLoaded", () => {
 
   socket.on('role', ({ role }) => {
     console.log('Assigned role:', role);
-    // optional: set UI to show role
   });
 
   socket.on('peer-ready', (data) => {
@@ -184,7 +180,6 @@ document.addEventListener("DOMContentLoaded", () => {
 
   socket.on('session-ended', (data) => {
     console.log('Session ended', data);
-    // teardown UI or show message to user
     alert('The other user disconnected.');
     location.reload();
   });
@@ -254,6 +249,7 @@ document.addEventListener("DOMContentLoaded", () => {
     setupSocketListeners();
 
     // prepare local audio + create RTCPeerConnection
+    // IMPORTANT: get mic for both host & guest so both can send audio
     setupWebRTC();
 
     if (isHost) {
@@ -275,42 +271,79 @@ document.addEventListener("DOMContentLoaded", () => {
   // ---- WEBRTC SETUP ----
   async function setupWebRTC() {
     try {
-      // get mic for audio chat (no local video)
+      // get mic for audio chat (no local video for camera)
       localStream = await navigator.mediaDevices.getUserMedia({ video: false, audio: true });
+      console.log('Obtained local audio stream:', localStream);
 
-      peerConnection = new RTCPeerConnection(configuration);
-
-      // add local audio tracks
-      localStream.getTracks().forEach(track => peerConnection.addTrack(track, localStream));
-
-      // handle incoming tracks (audio/video)
-      peerConnection.ontrack = (event) => {
-        if (!remoteStream) remoteStream = new MediaStream();
-        event.streams[0].getTracks().forEach(track => remoteStream.addTrack(track));
-
-        if (event.track.kind === 'video') {
-          videoPlayer.srcObject = remoteStream;
-          guestWaitingOverlay.classList.add('hidden');
-          videoPlayer.play().catch(e => console.error("Error playing remote video:", e));
-        }
-        if (event.track.kind === 'audio') {
-          const remoteAudio = new Audio();
-          remoteAudio.srcObject = new MediaStream([event.track]);
-          remoteAudio.play().catch(e => console.error("Error playing remote audio:", e));
-        }
-      };
-
-      // send ICE candidates to remote via signaling server
-      peerConnection.onicecandidate = (event) => {
-        if (event.candidate) {
-          socket.emit('webrtc-signal', { sessionId, candidate: event.candidate });
-        }
-      };
+      // create peerConnection if not created
+      if (!peerConnection) {
+        createPeerConnection();
+      }
 
     } catch (err) {
       console.error('Could not get user media', err);
       alert('Could not access microphone. Audio chat disabled.');
     }
+  }
+
+  function createPeerConnection() {
+    peerConnection = new RTCPeerConnection(configuration);
+
+    // ensure remoteStream exists and attach to video element for guests
+    remoteStream = new MediaStream();
+    // only set srcObject for guest playback; host will play file via <video> element and captureStream
+    videoPlayer.srcObject = (isHost ? null : remoteStream);
+
+    // add local audio tracks if available
+    if (localStream) {
+      localStream.getTracks().forEach(track => {
+        peerConnection.addTrack(track, localStream);
+      });
+    }
+
+    peerConnection.ontrack = (event) => {
+      console.log('ontrack event, kind=', event.track.kind);
+      // many browsers provide event.streams; add tracks to remoteStream
+      if (event.streams && event.streams[0]) {
+        event.streams[0].getTracks().forEach(track => {
+          remoteStream.addTrack(track);
+        });
+      } else {
+        // fallback: add the single track
+        remoteStream.addTrack(event.track);
+      }
+
+      if (event.track.kind === 'video') {
+        // guest should see host's video here
+        guestWaitingOverlay.classList.add('hidden');
+        if (!isHost) {
+          videoPlayer.srcObject = remoteStream;
+          videoPlayer.play().catch(() => {
+            console.log('Autoplay prevented; user interaction may be required to start playback.');
+          });
+        }
+      }
+
+      if (event.track.kind === 'audio') {
+        // create a dedicated audio element for remote audio if needed
+        const remoteAudio = new Audio();
+        remoteAudio.autoplay = true;
+        remoteAudio.srcObject = new MediaStream([event.track]);
+        remoteAudio.play().catch(() => {
+          console.log('Autoplay of remote audio prevented; user interaction required.');
+        });
+      }
+    };
+
+    peerConnection.onicecandidate = (event) => {
+      if (event.candidate) {
+        socket.emit('webrtc-signal', { sessionId, candidate: event.candidate });
+      }
+    };
+
+    peerConnection.onconnectionstatechange = () => {
+      console.log('PC state:', peerConnection.connectionState);
+    };
   }
 
   // ---- FILE SELECT (HOST) ----
@@ -322,41 +355,68 @@ document.addEventListener("DOMContentLoaded", () => {
     videoPlayer.controls = true;
     fileSelectorOverlay.classList.add('hidden');
 
+    // Wait for playback to start (some browsers require play() to populate captureStream)
+    try {
+      await videoPlayer.play();
+    } catch (e) {
+      console.warn('Autoplay prevented, user must press play to begin capture. Prompting user...');
+      // If autoplay prevented, instruct user to press play
+      alert('Please press play on the video to allow streaming to peers.');
+      return;
+    }
+
     // capture stream from the playing video
-    const videoStream = videoPlayer.captureStream();
-    // add tracks to peer connection
-    videoStream.getTracks().forEach(track => peerConnection.addTrack(track, videoStream));
+    const videoStream = videoPlayer.captureStream ? videoPlayer.captureStream() : videoPlayer.mozCaptureStream && videoPlayer.mozCaptureStream();
+    if (!videoStream) {
+      alert('Your browser does not support captureStream(). Use Chrome/Edge/Firefox latest versions.');
+      return;
+    }
+
+    // create peerConnection if not exists and add tracks
+    if (!peerConnection) createPeerConnection();
+
+    videoStream.getTracks().forEach(track => {
+      peerConnection.addTrack(track, videoStream);
+    });
 
     // create offer and send to guest
-    const offer = await peerConnection.createOffer();
-    await peerConnection.setLocalDescription(offer);
-    socket.emit('webrtc-signal', { sessionId, offer });
+    try {
+      const offer = await peerConnection.createOffer();
+      await peerConnection.setLocalDescription(offer);
+      socket.emit('webrtc-signal', { sessionId, offer });
+      console.log('Sent offer');
+    } catch (e) {
+      console.error('Error creating/sending offer', e);
+    }
   }
 
   // ---- SOCKET SIGNALING HANDLERS ----
   function setupSocketListeners() {
-    // Don't register listeners multiple times
     if (setupSocketListeners._done) return;
     setupSocketListeners._done = true;
 
     socket.on('webrtc-signal', async (data) => {
       try {
         if (data.offer) {
-          // Guest receives offer
           console.log('Received offer');
-          // ensure peerConnection exists
-          if (!peerConnection) await setupWebRTC();
+          if (!peerConnection) createPeerConnection();
           await peerConnection.setRemoteDescription(new RTCSessionDescription(data.offer));
           const answer = await peerConnection.createAnswer();
           await peerConnection.setLocalDescription(answer);
           socket.emit('webrtc-signal', { sessionId, answer });
+          console.log('Sent answer');
         } else if (data.answer) {
-          // Host receives answer
           console.log('Received answer');
-          await peerConnection.setRemoteDescription(new RTCSessionDescription(data.answer));
+          if (peerConnection) await peerConnection.setRemoteDescription(new RTCSessionDescription(data.answer));
         } else if (data.candidate) {
-          // Both sides add candidate
-          await peerConnection.addIceCandidate(new RTCIceCandidate(data.candidate));
+          console.log('Received candidate');
+          if (peerConnection) {
+            try {
+              await peerConnection.addIceCandidate(new RTCIceCandidate(data.candidate));
+            } catch (err) {
+              console.warn('addIceCandidate error', err);
+            }
+          }
         }
       } catch (e) {
         console.error('Error handling webrtc-signal', e);
