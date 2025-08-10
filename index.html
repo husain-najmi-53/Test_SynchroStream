@@ -64,9 +64,40 @@
       <div class="flex flex-col lg:flex-row h-full w-full bg-gray-900">
         <div
           id="video-container"
-          class="relative flex-grow h-1/2 lg:h-full lg:w-3/4 bg-black flex items-center justify-center"
+          class="relative flex-grow h-[60vh] lg:h-full lg:w-3/4 bg-black flex items-center justify-center"
         >
+          <div class="absolute top-2 left-2 z-20">
+            <div id="connection-status" class="px-3 py-1 rounded-full text-sm font-medium hidden">
+            </div>
+          </div>
           <video id="video-player" class="w-full h-full object-contain"></video>
+          <div id="video-info" class="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/70 to-transparent p-4 text-white hidden">
+            <div class="flex items-center justify-between">
+              <span id="video-title" class="text-sm font-medium truncate"></span>
+              <span id="video-time" class="text-sm font-medium"></span>
+            </div>
+            <div class="mt-2 flex items-center gap-4">
+              <button id="play-pause-btn" class="hover:text-indigo-400">
+                <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M14.752 11.168l-3.197-2.132A1 1 0 0010 9.87v4.263a1 1 0 001.555.832l3.197-2.132a1 1 0 000-1.664z" />
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                </svg>
+              </button>
+              <div class="flex-1 relative">
+                <div id="video-progress" class="h-1 bg-gray-600 rounded-full">
+                  <div id="video-progress-bar" class="h-full bg-indigo-500 rounded-full" style="width: 0%"></div>
+                </div>
+              </div>
+              <div class="flex items-center gap-2">
+                <input type="range" id="volume-slider" class="w-20" min="0" max="100" value="100">
+                <button id="volume-btn" class="hover:text-indigo-400">
+                  <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15.536 8.464a5 5 0 010 7.072M17.536 6.464a7 7 0 010 11.072M9.536 8.464a5 5 0 010 7.072M7.536 6.464a7 7 0 010 11.072M4.343 9.657l3.657 3.657-3.657 3.657" />
+                  </svg>
+                </button>
+              </div>
+            </div>
+          </div>
           <div
             id="file-selector-overlay"
             class="absolute inset-0 bg-black bg-opacity-80 flex flex-col items-center justify-center text-white p-4 z-10"
@@ -86,12 +117,28 @@
               <p class="text-gray-400 mb-2">
                 Share this Session ID with your friend:
               </p>
-              <div class="bg-gray-800 p-3 rounded-lg">
-                <span
-                  id="session-id-display"
-                  class="text-xl font-mono tracking-widest"
-                ></span>
+              <div class="flex items-center gap-2">
+                <div class="bg-gray-800 p-3 rounded-lg">
+                  <span
+                    id="session-id-display"
+                    class="text-xl font-mono tracking-widest"
+                  ></span>
+                </div>
+                <button
+                  id="copy-id-btn"
+                  class="bg-indigo-600 p-2 rounded-lg hover:bg-indigo-700 transition-colors"
+                  title="Copy Session ID"
+                >
+                  <svg class="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 5H6a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2v-1M8 5a2 2 0 002 2h2a2 2 0 002-2M8 5a2 2 0 012-2h2a2 2 0 012 2m0 0h2a2 2 0 012 2v3m2 4H10m0 0l3-3m-3 3l3 3" />
+                  </svg>
+                </button>
               </div>
+            </div>
+            <div id="change-file-btn" class="mt-4 text-center hidden">
+              <button class="bg-indigo-600 text-white font-bold py-2 px-4 rounded-lg hover:bg-indigo-700 transition-colors">
+                Change Video File
+              </button>
             </div>
           </div>
           <div
@@ -112,12 +159,15 @@
             class="p-4 border-b border-gray-700 flex justify-between items-center"
           >
             <h2 class="text-xl font-bold text-white">Chat & Controls</h2>
-            <button
-              id="mute-btn"
-              class="p-2 rounded-full bg-gray-700 hover:bg-gray-600 transition"
-            >
+            <div class="flex items-center gap-3">
+              <label class="relative inline-flex items-center cursor-pointer">
+                <input type="checkbox" id="mute-toggle" class="sr-only peer" checked>
+                <div class="w-11 h-6 bg-gray-600 rounded-full peer-focus:ring-2 peer-focus:ring-indigo-300 dark:peer-focus:ring-indigo-800 peer dark:bg-gray-700 peer-checked:after:translate-x-full rtl:peer-checked:after:-translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-0.5 after:start-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all dark:border-gray-600 peer-checked:bg-green-500"></div>
+                <span id="mute-status" class="ms-3 text-sm font-medium text-white">Mic On</span>
+              </label>
               <svg
-                class="w-6 h-6 text-white"
+                id="mic-icon"
+                class="w-5 h-5 text-green-400"
                 fill="none"
                 stroke="currentColor"
                 viewBox="0 0 24 24"
@@ -130,7 +180,7 @@
                   d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-8a3 3 0 01-3-3V5a3 3 0 116 0v6a3 3 0 01-3 3z"
                 ></path>
               </svg>
-            </button>
+            </div>
           </div>
 
           <div id="chat-box" class="flex-grow p-4 overflow-y-auto">
@@ -210,7 +260,15 @@ document.addEventListener("DOMContentLoaded", () => {
   let peerConnection = null;
 
   const configuration = {
-    iceServers: [{ urls: "stun:stun.l.google.com:19302" }]
+    iceServers: [
+      { urls: [
+        "stun:stun1.l.google.com:19302",
+        "stun:stun2.l.google.com:19302",
+        "stun:stun3.l.google.com:19302",
+        "stun:stun4.l.google.com:19302"
+      ]},
+    ],
+    iceCandidatePoolSize: 10
   };
 
   // ---- LOBBY ----
@@ -253,7 +311,12 @@ document.addEventListener("DOMContentLoaded", () => {
     // IMPORTANT: get mic for both host & guest so both can send audio
     setupWebRTC();
 
+    // First, ensure both overlays are hidden by default
+    fileSelectorOverlay.classList.add('hidden');
+    guestWaitingOverlay.classList.add('hidden');
+
     if (isHost) {
+      // Show file selector only for host
       fileSelectorOverlay.classList.remove('hidden');
       sessionIdDisplay.textContent = sessionId;
       selectFileBtn.addEventListener('click', () => fileInput.click());
@@ -264,26 +327,50 @@ document.addEventListener("DOMContentLoaded", () => {
       videoPlayer.addEventListener('pause', () => socket.emit('control', { sessionId, action: 'pause', time: videoPlayer.currentTime }));
       videoPlayer.addEventListener('seeked', () => socket.emit('control', { sessionId, action: 'seek', time: videoPlayer.currentTime }));
     } else {
+      // Show waiting overlay only for guest
       guestWaitingOverlay.classList.remove('hidden');
-      // guest has already emitted join-session above; now wait for offer through signaling
+      // Ensure file selector is hidden for guest
+      fileSelectorOverlay.classList.add('hidden');
     }
   }
 
   // ---- WEBRTC SETUP ----
   async function setupWebRTC() {
     try {
-      // get mic for audio chat (no local video for camera)
-      localStream = await navigator.mediaDevices.getUserMedia({ video: false, audio: true });
-      //console.log('Obtained local audio stream:', localStream);
+      // get mic for audio chat with specific constraints for better compatibility
+      localStream = await navigator.mediaDevices.getUserMedia({
+        video: false,
+        audio: {
+          echoCancellation: true,
+          noiseSuppression: true,
+          autoGainControl: true,
+          sampleRate: 48000,
+          channelCount: 1
+        }
+      });
 
       // create peerConnection if not created
       if (!peerConnection) {
         createPeerConnection();
       }
 
+      // Show audio enabled indicator
+      const audioStatus = document.createElement('div');
+      audioStatus.className = 'fixed top-4 right-4 bg-green-500 text-white px-4 py-2 rounded-lg z-50';
+      audioStatus.textContent = '🎤 Audio Connected';
+      document.body.appendChild(audioStatus);
+      setTimeout(() => audioStatus.remove(), 3000);
+
     } catch (err) {
       console.error('Could not get user media', err);
-      alert('Could not access microphone. Audio chat disabled.');
+      const retryBtn = document.createElement('button');
+      retryBtn.className = 'fixed top-4 right-4 bg-red-500 text-white px-4 py-2 rounded-lg z-50';
+      retryBtn.textContent = '🎤 Click to enable microphone';
+      retryBtn.onclick = () => {
+        retryBtn.remove();
+        setupWebRTC();
+      };
+      document.body.appendChild(retryBtn);
     }
   }
 
@@ -315,9 +402,10 @@ document.addEventListener("DOMContentLoaded", () => {
       }
 
       if (event.track.kind === 'video') {
-        // guest should see host's video here
-        guestWaitingOverlay.classList.add('hidden');
+        // For guest: hide waiting overlay and ensure file selector is hidden
         if (!isHost) {
+          guestWaitingOverlay.classList.add('hidden');
+          fileSelectorOverlay.classList.add('hidden');
           videoPlayer.srcObject = remoteStream;
           videoPlayer.play().catch(() => {
             console.log('Autoplay prevented; user interaction may be required to start playback.');
@@ -326,13 +414,45 @@ document.addEventListener("DOMContentLoaded", () => {
       }
 
       if (event.track.kind === 'audio') {
-        // create a dedicated audio element for remote audio if needed
-        const remoteAudio = new Audio();
+        // Use existing audio element or create new one
+        const remoteAudio = document.getElementById('remoteAudio');
         remoteAudio.autoplay = true;
-        remoteAudio.srcObject = new MediaStream([event.track]);
-        remoteAudio.play().catch(() => {
-          console.log('Autoplay of remote audio prevented; user interaction required.');
-        });
+        remoteAudio.playsInline = true;
+        
+        const audioStream = new MediaStream([event.track]);
+        remoteAudio.srcObject = audioStream;
+        
+        // Handle autoplay
+        const playAudio = async () => {
+          try {
+            await remoteAudio.play();
+            document.removeEventListener('click', playAudio);
+            const indicator = document.createElement('div');
+            indicator.className = 'fixed top-4 left-4 bg-green-500 text-white px-4 py-2 rounded-lg z-50';
+            indicator.textContent = '🔊 Remote Audio Connected';
+            document.body.appendChild(indicator);
+            setTimeout(() => indicator.remove(), 3000);
+          } catch (err) {
+            console.warn('Audio play failed:', err);
+            document.addEventListener('click', playAudio);
+          }
+        };
+        
+        playAudio();
+        
+        // Monitor audio track
+        event.track.onmute = () => {
+          const muteIndicator = document.createElement('div');
+          muteIndicator.className = 'fixed top-4 left-4 bg-yellow-500 text-white px-4 py-2 rounded-lg z-50';
+          muteIndicator.textContent = '🔇 Remote Audio Muted';
+          muteIndicator.id = 'mute-indicator';
+          document.body.appendChild(muteIndicator);
+        };
+        
+        event.track.onunmute = () => {
+          const muteIndicator = document.getElementById('mute-indicator');
+          if (muteIndicator) muteIndicator.remove();
+        };
       }
     };
 
@@ -351,10 +471,23 @@ document.addEventListener("DOMContentLoaded", () => {
   async function handleFileSelect(event) {
     const file = event.target.files[0];
     if (!file) return;
+    
+    // Clean up previous video stream if it exists
+    if (videoPlayer.src) {
+      const oldUrl = videoPlayer.src;
+      videoPlayer.src = '';
+      URL.revokeObjectURL(oldUrl);
+    }
+
     const url = URL.createObjectURL(file);
     videoPlayer.src = url;
-    videoPlayer.controls = true;
+    videoPlayer.controls = false; // We'll use our custom controls
     fileSelectorOverlay.classList.add('hidden');
+    
+    // Show video title
+    videoTitle.textContent = file.name;
+    // Show change file button
+    changeFileBtn.classList.remove('hidden');
 
     // Wait for playback to start (some browsers require play() to populate captureStream)
     try {
@@ -441,10 +574,18 @@ document.addEventListener("DOMContentLoaded", () => {
   function handleChatMessage(data) {
     const messageElement = document.createElement('div');
     messageElement.classList.add('chat-message', 'mb-3', 'flex');
+    const time = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+    const isOwnMessage = data.sender === (isHost ? 'Host' : 'Guest');
+    
     const content = `
-      <div class="p-3 rounded-lg ${data.sender === (isHost ? 'Host' : 'Guest') ? 'bg-indigo-500 text-white ml-auto' : 'bg-gray-600 text-white'}">
-        <p class="font-bold text-sm">${data.sender}</p>
-        <p>${data.text}</p>
+      <div class="max-w-[85%] ${isOwnMessage ? 'ml-auto' : ''}">
+        <div class="p-3 rounded-lg ${isOwnMessage ? 'bg-indigo-500 text-white' : 'bg-gray-600 text-white'}">
+          <div class="flex justify-between items-center mb-1">
+            <p class="font-bold text-sm">${data.sender}</p>
+            <span class="text-xs opacity-75">${time}</span>
+          </div>
+          <p class="break-words">${data.text}</p>
+        </div>
       </div>
     `;
     messageElement.innerHTML = content;
@@ -461,14 +602,140 @@ document.addEventListener("DOMContentLoaded", () => {
     chatInput.value = '';
   });
 
-  // ---- MUTE BUTTON ----
-  muteBtn.addEventListener('click', () => {
+  // ---- MUTE TOGGLE ----
+  const muteToggle = document.getElementById('mute-toggle');
+  const muteStatus = document.getElementById('mute-status');
+  const micIcon = document.getElementById('mic-icon');
+
+  muteToggle.addEventListener('change', () => {
     if (localStream) {
-      localStream.getAudioTracks().forEach(track => {
-        track.enabled = !track.enabled;
-        muteBtn.classList.toggle('bg-red-500', !track.enabled);
-        muteBtn.classList.toggle('bg-gray-700', track.enabled);
-      });
+      const audioTrack = localStream.getAudioTracks()[0];
+      if (audioTrack) {
+        audioTrack.enabled = muteToggle.checked;
+        
+        // Update toggle appearance
+        if (!audioTrack.enabled) {
+          // Muted state
+          muteStatus.textContent = 'Mic Off';
+          micIcon.classList.remove('text-green-400');
+          micIcon.classList.add('text-red-400');
+          
+          // Show temporary notification
+          const muteNotification = document.createElement('div');
+          muteNotification.className = 'fixed top-4 right-4 bg-red-500 text-white px-4 py-2 rounded-lg z-50 animate-fade-out';
+          muteNotification.textContent = '🎤 Microphone Muted';
+          document.body.appendChild(muteNotification);
+          setTimeout(() => muteNotification.remove(), 2000);
+        } else {
+          // Unmuted state
+          muteStatus.textContent = 'Mic On';
+          micIcon.classList.remove('text-red-400');
+          micIcon.classList.add('text-green-400');
+          
+          // Show temporary notification
+          const unmuteNotification = document.createElement('div');
+          unmuteNotification.className = 'fixed top-4 right-4 bg-green-500 text-white px-4 py-2 rounded-lg z-50 animate-fade-out';
+          unmuteNotification.textContent = '🎤 Microphone Active';
+          document.body.appendChild(unmuteNotification);
+          setTimeout(() => unmuteNotification.remove(), 2000);
+        }
+      }
+    }
+  });
+
+  // ---- Error Handling and Status Updates ----
+  function updateConnectionStatus(state, message) {
+    const statusEl = document.getElementById('connection-status');
+    statusEl.classList.remove('hidden', 'bg-green-500', 'bg-yellow-500', 'bg-red-500');
+    
+    switch(state) {
+      case 'connected':
+        statusEl.classList.add('bg-green-500');
+        break;
+      case 'connecting':
+        statusEl.classList.add('bg-yellow-500');
+        break;
+      case 'error':
+        statusEl.classList.add('bg-red-500');
+        break;
+    }
+    
+    statusEl.textContent = message;
+    statusEl.classList.remove('hidden');
+  }
+
+  // Copy Session ID functionality
+  document.getElementById('copy-id-btn').addEventListener('click', () => {
+    const sessionId = document.getElementById('session-id-display').textContent;
+    navigator.clipboard.writeText(sessionId).then(() => {
+      const notification = document.createElement('div');
+      notification.className = 'fixed top-4 right-4 bg-green-500 text-white px-4 py-2 rounded-lg z-50';
+      notification.textContent = '📋 Session ID copied!';
+      document.body.appendChild(notification);
+      setTimeout(() => notification.remove(), 2000);
+    });
+  });
+
+  // Change file functionality
+  const changeFileBtn = document.getElementById('change-file-btn');
+  changeFileBtn.addEventListener('click', () => {
+    fileInput.click();
+  });
+
+  // Video controls
+  const playPauseBtn = document.getElementById('play-pause-btn');
+  const volumeSlider = document.getElementById('volume-slider');
+  const volumeBtn = document.getElementById('volume-btn');
+  const videoProgress = document.getElementById('video-progress');
+  const progressBar = document.getElementById('video-progress-bar');
+  const videoInfo = document.getElementById('video-info');
+  const videoTitle = document.getElementById('video-title');
+  const videoTime = document.getElementById('video-time');
+
+  function formatTime(seconds) {
+    const h = Math.floor(seconds / 3600);
+    const m = Math.floor((seconds % 3600) / 60);
+    const s = Math.floor(seconds % 60);
+    return [h, m, s].map(v => v < 10 ? '0' + v : v).join(':');
+  }
+
+  videoPlayer.addEventListener('loadedmetadata', () => {
+    videoInfo.classList.remove('hidden');
+  });
+
+  videoPlayer.addEventListener('timeupdate', () => {
+    const progress = (videoPlayer.currentTime / videoPlayer.duration) * 100;
+    progressBar.style.width = progress + '%';
+    videoTime.textContent = `${formatTime(videoPlayer.currentTime)} / ${formatTime(videoPlayer.duration)}`;
+  });
+
+  videoProgress.addEventListener('click', (e) => {
+    const rect = videoProgress.getBoundingClientRect();
+    const pos = (e.clientX - rect.left) / rect.width;
+    videoPlayer.currentTime = pos * videoPlayer.duration;
+  });
+
+  volumeSlider.addEventListener('input', () => {
+    videoPlayer.volume = volumeSlider.value / 100;
+  });
+
+  // Handle connection state changes
+  socket.on('connect', () => {
+    updateConnectionStatus('connected', '🟢 Connected');
+  });
+
+  socket.on('disconnect', () => {
+    updateConnectionStatus('error', '🔴 Disconnected');
+  });
+
+  socket.on('connect_error', () => {
+    updateConnectionStatus('error', '🔴 Connection Error');
+  });
+
+  // Error recovery
+  window.addEventListener('online', () => {
+    if (socket.disconnected) {
+      socket.connect();
     }
   });
 
