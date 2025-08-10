@@ -15,6 +15,7 @@
         max-width: 80%;
       }
     </style>
+    <audio id="remoteAudio" autoplay></audio>
   </head>
   <body class="bg-gray-100 text-gray-800">
     <div
@@ -273,7 +274,7 @@ document.addEventListener("DOMContentLoaded", () => {
     try {
       // get mic for audio chat (no local video for camera)
       localStream = await navigator.mediaDevices.getUserMedia({ video: false, audio: true });
-      console.log('Obtained local audio stream:', localStream);
+      //console.log('Obtained local audio stream:', localStream);
 
       // create peerConnection if not created
       if (!peerConnection) {

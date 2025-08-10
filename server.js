@@ -24,24 +24,21 @@ const activeSessions = {};
 io.on('connection', (socket) => {
   console.log('socket connected', socket.id);
 
+  io.on('connection', (socket) => {
   socket.on('join-session', ({ sessionId }) => {
-    if (!sessionId) return;
+    const clientsInRoom = io.sockets.adapter.rooms.get(sessionId);
+    const numClients = clientsInRoom ? clientsInRoom.size : 0;
+
     socket.join(sessionId);
-    // Record host/guest roles simply
-    if (!activeSessions[sessionId]) {
-      activeSessions[sessionId] = { host: socket.id, guest: null };
-      console.log(`Created session ${sessionId} with host ${socket.id}`);
-      socket.emit('role', { role: 'host' });
-    } else if (!activeSessions[sessionId].guest) {
-      activeSessions[sessionId].guest = socket.id;
-      socket.emit('role', { role: 'guest' });
-      io.to(sessionId).emit('peer-ready', { message: 'Peer joined', sessionId });
-      console.log(`Guest ${socket.id} joined session ${sessionId}`);
-    } else {
-      // session full
-      socket.emit('session-full', { message: 'Session already has two participants.' });
-    }
+
+    let role = numClients === 1 ? 'host' : 'guest';
+    socket.emit('role', { role });
+
+    // Inform others that a peer is ready
+    socket.to(sessionId).emit('peer-ready');
   });
+});
+
 
   socket.on('webrtc-signal', (data) => {
     if (!data || !data.sessionId) return;
